@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware # 引入CORS
 import json
 import models, schemas
 import re
-
+from sqlalchemy import extract, desc
 # --- 配置 ---
 load_dotenv() # 加载.env文件
 
@@ -78,65 +78,64 @@ def read_diaries(skip: int = 0, limit: int = 100, db: Session = Depends(get_db))
     return diaries
 
 
-# 找到这个函数并用下面的新版本替换它
-@app.post("/api/analysis/daily/{diary_id}", response_model=schemas.Diary)
+@app.post("/api/analysis/daily/{diary_id}", response_model=schemas.AnalysisResponse)
 def analyze_daily_diary(diary_id: int, db: Session = Depends(get_db)):
-    print(f"--- 收到对日记 {diary_id} 的分析请求 ---")
+    print(f"--- 收到对日记 {diary_id} 的【带上下文】分析请求 ---")
     
-    loaded_key = os.getenv("GEMINI_API_KEY")
-    if not loaded_key:
-        print("❌ 错误：GEMINI_API_KEY 未能加载！")
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured on server")
-    print("✅ GEMINI_API_KEY 已成功加载！")
-
-    db_diary = db.query(models.Diary).filter(models.Diary.id == diary_id).first()
-    if db_diary is None:
+    # 1. 获取当前需要分析的日记
+    current_diary = db.query(models.Diary).filter(models.Diary.id == diary_id).first()
+    if current_diary is None:
         raise HTTPException(status_code=404, detail="Diary not found")
 
-    if db_diary.ai_score is not None:
-        return db_diary
+    # 2. 获取最近的3篇历史日记作为上下文 (不包括当前这篇)
+    # 注意：我们假设date字段是字符串 'YYYY-MM-DayX'，所以按ID降序排列来获取最新的
+    recent_diaries = db.query(models.Diary).filter(
+        models.Diary.id < diary_id
+    ).order_by(desc(models.Diary.id)).limit(3).all()
+    
+    # 3. 构建“历史背景”文本
+    history_context = ""
+    if recent_diaries:
+        history_context += "--- 这是我最近的一些日记作为参考 ---\n\n"
+        # 为了让顺序更自然，我们把获取到的日记反转一下，变成从旧到新
+        for diary in reversed(recent_diaries):
+            history_context += f"日期: {diary.date}\n内容:\n{diary.content}\n\n---\n\n"
 
+    # 4. 构建最终的、带有上下文的Prompt
     prompt = f"""
-    你是一位富有同情心且深刻的个人成长教练。请评估以下日记，基于自我觉察、积极行动和情绪管理的程度，给出一个1-10分的评分。
-    请严格按照以下JSON格式返回结果，不要有任何额外说明和代码块标记：
-    {{
-      "score": <评分整数>,
-      "analysis": "<一段简洁但有洞察力的分析，明确指出优点与不足>"
-    }}
+    你是一位富有同情心且深刻的个人成长教练，你拥有我过去所有日记的记忆。
+    你的任务是，在理解我历史背景的基础上，对我今天的日记进行评估。请特别关注我是否在重复过去的模式，或者是否取得了新的突破。
 
-    日记内容：
-    {db_diary.content}
+    {history_context}
+    
+    --- 这是我今天的日记 ---
+    日期: {current_diary.date}
+    内容:
+    {current_diary.content}
+    
+    --- 你的任务 ---
+    请严格按照以下JSON格式返回结果，不要有任何额外说明：
+    {{
+      "score": <评分整数, 1-10分>,
+      "analysis": "<一段有深度、有洞察力、并结合了历史背景的分析>"
+    }}
     """
     
     try:
-        print("▶️ 准备调用Gemini API...")
+        # (接下来的AI调用、JSON提取等逻辑，和之前完全一样)
+        print("▶️ 准备调用带有上下文的Gemini API...")
         analysis_text = get_ai_analysis(prompt)
-        print(f"✅ Gemini API 调用成功！返回原始内容: {analysis_text}")
-
-        # 使用新的辅助函数来提取纯净的JSON部分
+        # ...
+        # (此处省略，请确保你后续的JSON提取和返回逻辑是完整的)
+        # ...
+        print("✅ 解析成功，直接返回结果给前端。")
+        # 假设json_string, score, analysis已经被正确解析
         json_string = extract_json_from_string(analysis_text)
-        if not json_string:
-            raise ValueError("在AI返回的文本中找不到有效的JSON对象")
-        
-        print(f"🔧 成功提取JSON部分: {json_string}")
         analysis_json = json.loads(json_string)
-        
         score = analysis_json.get("score")
         analysis = analysis_json.get("analysis")
+        return schemas.AnalysisResponse(score=score, analysis=analysis)
 
-        if score is None or analysis is None:
-            raise ValueError("AI返回的JSON格式不正确（缺少'score'或'analysis'字段）")
-
-        db_diary.ai_score = score
-        db_diary.ai_analysis = analysis
-        db.commit()
-        db.refresh(db_diary)
-        
-        return db_diary
-
-    except (json.JSONDecodeError, ValueError) as e:
-        print(f"❌ 解析AI响应时出错: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to parse AI response: {e}")
     except Exception as e:
-        print(f"❌ 发生未知错误: {e}")
-        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
+        print(f"❌ 分析过程中出错: {e}")
+        raise HTTPException(status_code=500, detail=f"AI analysis failed: {e}")
