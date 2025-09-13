@@ -23,7 +23,7 @@ models.Base.metadata.create_all(bind=engine)
 # Gemini API 配置
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 genai.configure(api_key=GEMINI_API_KEY)
-ai_model = genai.GenerativeModel('gemini-1.5-pro-latest')
+ai_model = genai.GenerativeModel('gemini-2.5-pro')
 
 app = FastAPI()
 
