@@ -3,13 +3,12 @@ import os
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from datetime import date
 import re
 import models
 
 # --- 配置 ---
 load_dotenv()
-DIARY_FOLDER_PATH = os.getenv("DIARY_FOLDER_PATH") # 请确保.env文件里有这个路径
+DIARY_FOLDER_PATH = os.getenv("DIARY_FOLDER_PATH")
 DATABASE_URL = "sqlite:///./mindgarden.db"
 
 engine = create_engine(DATABASE_URL)
@@ -23,51 +22,47 @@ def sync_diaries_from_folders():
     db = SessionLocal()
     print(f"正在从 {DIARY_FOLDER_PATH} 同步日记...")
 
-    # 遍历年月文件夹，例如 "2025.8"
     for month_folder in os.listdir(DIARY_FOLDER_PATH):
         month_folder_path = os.path.join(DIARY_FOLDER_PATH, month_folder)
         if os.path.isdir(month_folder_path):
             try:
+                # 从 "2025.8" 中提取年份和月份
                 year, month = map(int, month_folder.split('.'))
             except ValueError:
                 print(f"跳过格式不正确的文件夹: {month_folder}")
                 continue
 
-            # 遍历日记文件，例如 "Day26.md"
             for day_file in os.listdir(month_folder_path):
                 if day_file.lower().startswith("day") and day_file.endswith(".md"):
-                    # 从 "Day26.md" 中提取数字 26
                     day_match = re.search(r'\d+', day_file)
                     if not day_match:
                         continue
                     
-                    day = int(day_match.group(0))
+                    day_number = int(day_match.group(0))
 
-                    try:
-                        diary_date = date(year, month, day)
-                    except ValueError:
-                        print(f"跳过无效日期文件: {month_folder}/{day_file}")
-                        continue
+                    # vvvv 新的日期字符串拼接逻辑 vvvv
+                    # 使用 f-string 格式化月份为两位数（如08, 09），方便未来排序
+                    diary_date_str = f"{year}-{month:02d}-Day{day_number}"
+                    # ^^^^ 新的日期字符串拼接逻辑 ^^^^
                     
                     # 检查数据库中是否已存在
-                    existing_diary = db.query(models.Diary).filter(models.Diary.date == diary_date).first()
+                    existing_diary = db.query(models.Diary).filter(models.Diary.date == diary_date_str).first()
                     if existing_diary:
-                        continue # 如果已存在，则跳过
+                        continue
 
                     # 读取文件内容并添加
                     file_path = os.path.join(month_folder_path, day_file)
                     with open(file_path, 'r', encoding='utf-8') as f:
                         content = f.read()
                     
-                    new_diary = models.Diary(date=diary_date, content=content)
+                    new_diary = models.Diary(date=diary_date_str, content=content)
                     db.add(new_diary)
-                    print(f"添加新日记：{diary_date}")
+                    print(f"添加新日记：{diary_date_str}")
 
     db.commit()
     db.close()
     print("同步完成！")
 
 if __name__ == "__main__":
-    # 确保数据库和表已创建
     models.Base.metadata.create_all(bind=engine)
     sync_diaries_from_folders()

@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from datetime import date
 
 class DiaryBase(BaseModel):
-    date: date
+    date: str
     content: str
 
 class DiaryCreate(DiaryBase):
