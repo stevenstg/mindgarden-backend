@@ -69,19 +69,24 @@ def read_diaries(skip: int = 0, limit: int = 100, db: Session = Depends(get_db))
     diaries = db.query(models.Diary).offset(skip).limit(limit).all()
     return diaries
 
-# main.py
-
-# ... (文件顶部的import和其他代码保持不变) ...
-import json # <--- 确保你导入了json库
-
-# ... (你的 FastAPI app 和 get_db 函数等保持不变) ...
 
 # 找到这个函数并用下面的新版本替换它
 @app.post("/api/analysis/daily/{diary_id}", response_model=schemas.Diary)
 def analyze_daily_diary(diary_id: int, db: Session = Depends(get_db)):
+    print(f"--- 收到对日记 {diary_id} 的分析请求 ---") # <--- 添加日志1
+
+    # 检查API密钥是否被加载
+    loaded_key = os.getenv("GEMINI_API_KEY")
+    if loaded_key:
+        print("✅ GEMINI_API_KEY 已成功加载！")
+    else:
+        print("❌ 错误：GEMINI_API_KEY 未能加载！请检查HF secrets！")
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured on server")
+
     db_diary = db.query(models.Diary).filter(models.Diary.id == diary_id).first()
     if db_diary is None:
         raise HTTPException(status_code=404, detail="Diary not found")
+
 
     # 如果已经分析过，直接返回结果，避免重复调用API
     if db_diary.ai_score is not None:
@@ -101,9 +106,9 @@ def analyze_daily_diary(diary_id: int, db: Session = Depends(get_db)):
     """
     
     try:
-        # 调用AI并获取返回的文本
+        print("▶️ 准备调用Gemini API...") # <--- 添加日志2
         analysis_text = get_ai_analysis(prompt)
-        
+        print("✅ Gemini API 调用成功！") # <--- 添加日志3
         # 解析AI返回的JSON字符串
         analysis_json = json.loads(analysis_text)
         
