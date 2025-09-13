@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware # 引入CORS
 import json
 import models, schemas
+import re
 
 # --- 配置 ---
 load_dotenv() # 加载.env文件
