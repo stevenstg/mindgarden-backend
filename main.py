@@ -100,7 +100,7 @@ def analyze_daily_diary(diary_id: int, db: Session = Depends(get_db)):
     请严格按照以下JSON格式返回结果，不要有任何额外说明和代码块标记：
     {{
       "score": <评分整数>,
-      "analysis": "<一段简洁但有洞察力的分析>"
+      "analysis": "<一段简洁但有洞察力的分析，明确指出优点与不足>"
     }}
 
     日记内容：
