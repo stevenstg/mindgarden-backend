@@ -69,15 +69,28 @@ def read_diaries(skip: int = 0, limit: int = 100, db: Session = Depends(get_db))
     diaries = db.query(models.Diary).offset(skip).limit(limit).all()
     return diaries
 
-@app.post("/api/analysis/daily/{diary_id}")
+# main.py
+
+# ... (文件顶部的import和其他代码保持不变) ...
+import json # <--- 确保你导入了json库
+
+# ... (你的 FastAPI app 和 get_db 函数等保持不变) ...
+
+# 找到这个函数并用下面的新版本替换它
+@app.post("/api/analysis/daily/{diary_id}", response_model=schemas.Diary)
 def analyze_daily_diary(diary_id: int, db: Session = Depends(get_db)):
     db_diary = db.query(models.Diary).filter(models.Diary.id == diary_id).first()
     if db_diary is None:
         raise HTTPException(status_code=404, detail="Diary not found")
 
+    # 如果已经分析过，直接返回结果，避免重复调用API
+    if db_diary.ai_score is not None:
+        return db_diary
+
+    # 这是我们给AI的指令，要求它返回JSON格式
     prompt = f"""
     你是一位富有同情心且深刻的个人成长教练。请评估以下日记，基于自我觉察、积极行动和情绪管理的程度，给出一个1-10分的评分。
-    请按以下JSON格式返回结果，不要有任何额外说明：
+    请严格按照以下JSON格式返回结果，不要有任何额外说明和代码块标记：
     {{
       "score": <评分整数>,
       "analysis": "<一段简洁但有洞察力的分析>"
@@ -86,9 +99,32 @@ def analyze_daily_diary(diary_id: int, db: Session = Depends(get_db)):
     日记内容：
     {db_diary.content}
     """
-    analysis_text = get_ai_analysis(prompt)
-    # 此处应添加代码来解析返回的JSON，并更新数据库
-    # 为保持教程简洁，我们先直接返回文本
-    return {"analysis_text": analysis_text}
+    
+    try:
+        # 调用AI并获取返回的文本
+        analysis_text = get_ai_analysis(prompt)
+        
+        # 解析AI返回的JSON字符串
+        analysis_json = json.loads(analysis_text)
+        
+        score = analysis_json.get("score")
+        analysis = analysis_json.get("analysis")
 
-# (月度复盘的端点可以类似地添加)
+        if score is None or analysis is None:
+            raise ValueError("AI返回的JSON格式不正确")
+
+        # 将评分和分析结果更新到数据库中
+        db_diary.ai_score = score
+        db_diary.ai_analysis = analysis
+        db.commit()
+        db.refresh(db_diary)
+        
+        return db_diary
+
+    except (json.JSONDecodeError, ValueError) as e:
+        # 如果AI没有返回标准JSON，则抛出错误
+        raise HTTPException(status_code=500, detail=f"Failed to parse AI response: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
+
+# ... (文件余下的代码保持不变) ...
