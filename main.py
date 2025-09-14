@@ -16,7 +16,12 @@ from sqlalchemy import extract, desc
 load_dotenv() # 加载.env文件
 
 # 数据库配置
-DATABASE_URL = "sqlite:///./mindgarden.db"
+DATABASE_URL = os.getenv("DATABASE_URL") # 我们将从环境变量读取
+if not DATABASE_URL:
+    # 如果是本地开发，可以继续使用SQLite
+    print("警告：未找到云数据库地址，将使用本地SQLite文件。")
+    DATABASE_URL = "sqlite:///./mindgarden.db"
+
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 models.Base.metadata.create_all(bind=engine)

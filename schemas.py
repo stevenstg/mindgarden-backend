@@ -16,3 +16,9 @@ class Diary(DiaryBase):
 
     class Config:
         orm_mode = True
+
+# schemas.py
+# ... (在文件末尾添加)
+class AnalysisResponse(BaseModel):
+    score: int
+    analysis: str
